@@ -1,2 +1,5 @@
 *.o
 *.so
+regression.diffs
+regression.out
+results

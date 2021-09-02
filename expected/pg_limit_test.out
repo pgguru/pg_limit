@@ -1,0 +1,39 @@
+SELECT generate_series(1,10);
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+               5
+               6
+               7
+               8
+               9
+              10
+(10 rows)
+
+SET pg_limit.max_rows = 5;
+SELECT generate_series(1,10);
+NOTICE:  pg_limit: result set was truncated to the first 5 rows
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+               5
+(5 rows)
+
+SET pg_limit.notify_total_count = true;
+SELECT generate_series(1,10);
+NOTICE:  pg_limit: result set was truncated to the first 5 rows (had 10 rows total)
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+               5
+(5 rows)
+

@@ -16,9 +16,17 @@ $ psql -c 'CREATE EXTENSION pg_limit' -U <user> -d <database>
 
 You will need to add `pg_limit` to your `postgresql.conf`'s `shared_preload_libraries`.
 
-You can set the number of rows to return in the `pg_limit.max_rows` variable, which will stop at this number of rows.  At this time, there is no notice that the query result set was truncated, so use carefully.  This is a userset limit at this time, so doesn't serve much to actually limit things, but we could tighten this up, then you could do something like this:
+You can set the number of rows to return in the `pg_limit.max_rows` variable, which will stop returning results at this number of rows.  Currently the `pg_limit.max_rows` is limited to an integer, so you can only effectively set this parameter to <= `INT_MAX`.
+
+If the result set was truncated, a `NOTICE` will be set to that effect.  If the `pg_limit.notify_total_count` variable is true, this notice will include the total record count that *would* have been returned.
+
+
+## Examples
 
 ```sql
 ALTER ROLE limited SET pg_limit.max_rows = 1000; -- or whatever
 ```
 
+## TODO
+
+- This currently limits all queries, including ones which would access system tables, COPY statements, etc.  Adjust to limit to only queries that return directly to backends, or at least make this handling selective as to which queries it affects.

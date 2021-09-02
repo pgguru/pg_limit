@@ -1,3 +1,4 @@
+-- basic sanity check that we show all rows
 SELECT generate_series(1,10);
  generate_series 
 -----------------
@@ -13,7 +14,30 @@ SELECT generate_series(1,10);
               10
 (10 rows)
 
+-- test basic max_rows functionality
 SET pg_limit.max_rows = 5;
+-- less than threshold; no notify
+SELECT generate_series(1,4);
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+(4 rows)
+
+-- boundary condition; no notify
+SELECT generate_series(1,5);
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+               5
+(5 rows)
+
+-- this should be truncated to 5 rows; notify
 SELECT generate_series(1,10);
 NOTICE:  pg_limit: result set was truncated to the first 5 rows
  generate_series 
@@ -25,7 +49,30 @@ NOTICE:  pg_limit: result set was truncated to the first 5 rows
                5
 (5 rows)
 
+-- now check the notify_total_count flag handling
 SET pg_limit.notify_total_count = true;
+-- less than threshold; no notify
+SELECT generate_series(1,4);
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+(4 rows)
+
+-- boundary condition; no notify
+SELECT generate_series(1,5);
+ generate_series 
+-----------------
+               1
+               2
+               3
+               4
+               5
+(5 rows)
+
+-- this should be truncated to 5 rows; notify with total
 SELECT generate_series(1,10);
 NOTICE:  pg_limit: result set was truncated to the first 5 rows (had 10 rows total)
  generate_series 

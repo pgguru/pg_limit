@@ -30,3 +30,14 @@ ALTER ROLE limited SET pg_limit.max_rows = 1000; -- or whatever
 ## TODO
 
 - This currently limits all queries, including ones which would access system tables, COPY statements, etc.  Adjust to limit to only queries that return directly to backends, or at least make this handling selective as to which queries it affects.
+
+## Testing
+
+Uses PGXS-standard `installcheck` action:
+
+```console
+$ export PG_CONFIG=path/to/pg_config
+$ make installcheck
+```
+
+This will create a new temporary instance, add the shared library to `shared_preload_libraries`, then run the regression tests.

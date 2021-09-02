@@ -98,45 +98,60 @@ static void
 pg_limit_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count,
 				 bool execute_once)
 {
-	uint64 limit = \
-		count == 0 ? max_rows :
-		count > max_rows ? max_rows : count;
-
-	/* here we add 1 if we are not unlimited; the proxy slot will make sure we don't exceed the
-	   number we want, but we use +1 here so we can tell if we would have consumed more than the
-	   limit.  If we are notifying the total count, just use the original count instead. */
-	limit = notify_total_count ? count : (limit ? limit + 1 : 0);
-
-	/* stash original receiveSlot for proxy use */
-	originalSlot = *queryDesc->dest->receiveSlot;
-
-	/* replace with our proxy routine */
-	queryDesc->dest->receiveSlot = pg_limit_proxy_slot;
-
-	/* verify we aren't self-recursive; that would be bad */
-	Assert(originalSlot != pg_limit_proxy_slot);
-
-	/* reset tuple counter */
-	n_tuples = 0;
-
-	/* make sure we clean up the proxy pointer; maybe being overly cautious, but seems like good
-	   behavior since we munge it above */
-	PG_TRY();
+	if (!max_rows)
 	{
+		/* short-circuit if we are not doing limit on rows */
+
 		if (prev_ExecutorRun)
-			prev_ExecutorRun(queryDesc, direction, limit, execute_once);
+			prev_ExecutorRun(queryDesc, direction, count, execute_once);
 		else
-			standard_ExecutorRun(queryDesc, direction, limit, execute_once);
+			standard_ExecutorRun(queryDesc, direction, count, execute_once);
 	}
-	PG_FINALLY();
-	{
-		queryDesc->dest->receiveSlot = originalSlot;
-		originalSlot = NULL;
-	}
-	PG_END_TRY();
+	else
+    {
+		/*
+		 * Calculate the upper bound for the number of rows we want to actually inspect.  If we are
+		 * notifying the total count we just use the count we were given, otherwise we clamp to
+		 * max_rows + 1 so we can tell if we would have consumed more than the limit.
+		 */
 
-	if (notify_total_count && n_tuples > max_rows)
-		ereport(NOTICE, (errmsg("pg_limit: result set was truncated to the first %d rows (had %d rows total)", max_rows, n_tuples)));
+		uint64 limit = \
+			notify_total_count ? count :
+			count == 0 ? max_rows + 1 :
+			count > max_rows ? max_rows + 1 : count;
+
+		/* stash original receiveSlot for proxy use */
+		originalSlot = *queryDesc->dest->receiveSlot;
+
+		/* replace with our proxy routine */
+		queryDesc->dest->receiveSlot = pg_limit_proxy_slot;
+
+		/* verify we aren't self-recursive; that would be bad */
+		Assert(originalSlot != pg_limit_proxy_slot);
+
+		/* reset tuple counter */
+		n_tuples = 0;
+
+		PG_TRY();
+		{
+			if (prev_ExecutorRun)
+				prev_ExecutorRun(queryDesc, direction, limit, execute_once);
+			else
+				standard_ExecutorRun(queryDesc, direction, limit, execute_once);
+		}
+		PG_FINALLY();
+		{
+			/* make sure we clean up the proxy pointer; maybe being overly cautious, but seems like good
+			 * behavior since we munge it above */
+
+			queryDesc->dest->receiveSlot = originalSlot;
+			originalSlot = NULL;
+		}
+		PG_END_TRY();
+
+		if (notify_total_count && n_tuples > max_rows)
+			ereport(NOTICE, (errmsg("pg_limit: result set was truncated to the first %d rows (had %d rows total)", max_rows, n_tuples)));
+	}
 }
 
 /*

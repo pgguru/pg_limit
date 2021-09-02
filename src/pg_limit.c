@@ -26,6 +26,7 @@ static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
 /* how many rows to limit our return to; the default 0 means all rows */
 static int max_rows = 0;
 static int n_tuples = 0;
+static bool notify_total_count = false;
 
 /* stored "real" DestReceiver receiveSlot function pointer */
 bool (*originalSlot) (TupleTableSlot *slot, DestReceiver *self);
@@ -44,6 +45,17 @@ void _PG_init(void)
 						NULL,
 						NULL,
 						NULL);
+
+	DefineCustomBoolVariable("pg_limit.notify_total_count",
+							 "Show total original row count if hit limit",
+							 NULL,
+							 &notify_total_count,
+							 false,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
 
 
 	/* install hooks */
@@ -92,8 +104,8 @@ pg_limit_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count
 
 	/* here we add 1 if we are not unlimited; the proxy slot will make sure we don't exceed the
 	   number we want, but we use +1 here so we can tell if we would have consumed more than the
-	   limit */
-	limit = limit ? limit + 1 : 0;
+	   limit.  If we are notifying the total count, just use the original count instead. */
+	limit = notify_total_count ? count : (limit ? limit + 1 : 0);
 
 	/* stash original receiveSlot for proxy use */
 	originalSlot = *queryDesc->dest->receiveSlot;
@@ -122,6 +134,9 @@ pg_limit_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count
 		originalSlot = NULL;
 	}
 	PG_END_TRY();
+
+	if (notify_total_count && n_tuples > max_rows)
+		ereport(NOTICE, (errmsg("pg_limit: result set was truncated to the first %d rows (had %d rows total)", max_rows, n_tuples)));
 }
 
 /*
@@ -154,13 +169,24 @@ pg_limit_ExecutorEnd(QueryDesc *queryDesc)
 static bool pg_limit_proxy_slot(TupleTableSlot *slot, DestReceiver *self) {
 	Assert(originalSlot);
 
-	if (max_rows && n_tuples == max_rows)
+	/* if no tuple is returned, we stop now */
+	if (!slot)
+		return false;
+
+	/* if we are limiting the output to a fixed number and we exceed the max and we want to notify on first exceeding */
+	if (max_rows && n_tuples >= max_rows && !notify_total_count)
 	{
 		ereport(NOTICE, (errmsg("pg_limit: result set was truncated to the first %d rows", max_rows)));
 		return false;
 	}
 
+	/* increment counter unconditionally */
 	n_tuples++;
 
-	return originalSlot(slot, self);
+	/* do original output if unlimited or if we are less than the boundary */
+	if (!max_rows || n_tuples <= max_rows)
+		return originalSlot(slot, self);
+
+	/* we hit this code path if we would have consumed a tuple but we are dropping it; do nothing but increment the counter */
+	return true;
 }

@@ -9,7 +9,7 @@ $ git clone git@github.com:pgguru/pg_limit.git
 $ cd pg_limit
 $ export PG_CONFIG=path/to/pg_config
 $ make install
-$ psql -c 'CREATE EXTENSION pg_limit' -U <user> -d <database>
+$ # add to shared_preload_libraries
 ```
 
 ## Usage
